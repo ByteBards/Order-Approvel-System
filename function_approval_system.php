@@ -673,17 +673,17 @@ function handle_doctor_approval_page() {
 }
 
 
-// add_action('init', function() {
-//     register_post_status('wc-rejected-by-doctor', [
-//         'label'                     => 'Rejected By Doctor',
-//         'public'                    => true,
-//         'exclude_from_search'       => false,
-//         'show_in_admin_all_list'    => true,
-//         'show_in_admin_status_list' => true,
-//         'label_count'               => _n_noop('Rejected By Doctor <span class="count">(%s)</span>', 'Rejected By Doctor <span class="count">(%s)</span>'),
-//         'post_type'                 => ['shop_order']
-//     ]);
-// });
+add_action('init', function() {
+    register_post_status('wc-rejected-by-doctor', [
+        'label'                     => 'Rejected By Doctor',
+        'public'                    => true,
+        'exclude_from_search'       => false,
+        'show_in_admin_all_list'    => true,
+        'show_in_admin_status_list' => true,
+        'label_count'               => _n_noop('Rejected By Doctor <span class="count">(%s)</span>', 'Rejected By Doctor <span class="count">(%s)</span>'),
+        'post_type'                 => ['shop_order']
+    ]);
+});
 
 add_filter('wc_order_statuses', function($order_statuses) {
     $new_statuses = [];
