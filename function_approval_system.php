@@ -685,16 +685,16 @@ function handle_doctor_approval_page() {
 //     ]);
 // });
 
-// add_filter('wc_order_statuses', function($order_statuses) {
-//     $new_statuses = [];
+add_filter('wc_order_statuses', function($order_statuses) {
+    $new_statuses = [];
 
-//     foreach ($order_statuses as $key => $label) {
-//         $new_statuses[$key] = $label;
+    foreach ($order_statuses as $key => $label) {
+        $new_statuses[$key] = $label;
 
-//         if ('wc-cancelled' === $key) {
-//             $new_statuses['wc-rejected-by-doctor'] = _x('Rejected By Doctor', 'Order status', 'woocommerce');
-//         }
-//     }
+        if ('wc-cancelled' === $key) {
+            $new_statuses['wc-rejected-by-doctor'] = _x('Rejected By Doctor', 'Order status', 'woocommerce');
+        }
+    }
 
-//     return $new_statuses;
-// });
+    return $new_statuses;
+});
