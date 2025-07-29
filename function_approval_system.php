@@ -1,5 +1,4 @@
 <?php
-
 // Register status with proper count styling
 // 1. Register the status (use this version)
 add_action('init', function() {
@@ -176,6 +175,23 @@ function enqueue_combined_doctor_checkout_script() {
             }
         }
 
+        function validateDoctorEmail() {
+            const isChecked = $('input[name="need_doctor_approval"]').is(':checked');
+            const doctorEmail = $('input[name="doctor_email"]').val();
+            const customerEmail = $('input[name="billing_email"]').val();
+            
+            if (isChecked) {
+                if (!doctorEmail) {
+                    return 'Doctor email is required';
+                } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(doctorEmail)) {
+                    return 'Please enter a valid doctor email address';
+                } else if (doctorEmail === customerEmail) {
+                    return 'Doctor email cannot be the same as customer email';
+                }
+            }
+            return '';
+        }
+
         // Trigger on checkbox change with loader delay
         $('input[name="need_doctor_approval"]').on('change', function () {
             showLoader();
@@ -196,6 +212,21 @@ function enqueue_combined_doctor_checkout_script() {
             showLoader();
 
             $('.woocommerce-error, .woocommerce-message').remove();
+
+            // Validate doctor email first
+            const emailError = validateDoctorEmail();
+            if (emailError) {
+                hideLoader();
+                $('.woocommerce-notices-wrapper').first().append(`
+                    <ul class="woocommerce-error" role="alert">
+                        <li>${emailError}</li>
+                    </ul>
+                `);
+                $('html, body').animate({
+                    scrollTop: $(".woocommerce-notices-wrapper").first().offset().top - 100
+                }, 500);
+                return;
+            }
 
             const selectedPaymentMethod = $('input[name="payment_method"]:checked').val();
             const $selectedPaymentBox = $('.payment_box.payment_method_' + selectedPaymentMethod);
@@ -218,7 +249,7 @@ function enqueue_combined_doctor_checkout_script() {
 
                 if (hasInvalidFields) {
                     $('html, body').animate({
-                        scrollTop: $(".woocommerce-invalid").first().offset().top - 100
+                        scrollTop: $(".woocommerce-notices-wrapper").first().offset().top - 100
                     }, 500);
 
                     if ($('.woocommerce-error').length === 0) {
@@ -254,16 +285,23 @@ function enqueue_combined_doctor_checkout_script() {
 
                             $('#confirm-ok').on('click', function () {
                                 clearTimeout(autoRedirect);
-                                // $('#send-doctor-modal').fadeOut();
                                 window.location.href = '<?php echo esc_url(home_url()); ?>?clear_cart=1';
                             });
                         } else {
-                            alert(response.data.message || 'Failed to send email.');
+                            $('.woocommerce-notices-wrapper').first().append(`
+                                <ul class="woocommerce-error" role="alert">
+                                    <li>${response.data.message || 'Failed to send email.'}</li>
+                                </ul>
+                            `);
                         }
                     },
                     error: function () {
                         hideLoader();
-                        alert('Something went wrong while sending to the doctor.');
+                        $('.woocommerce-notices-wrapper').first().append(`
+                            <ul class="woocommerce-error" role="alert">
+                                <li>Something went wrong while sending to the doctor.</li>
+                            </ul>
+                        `);
                     }
                 });
             }, 300);
@@ -285,6 +323,7 @@ function handle_send_checkout_to_doctor() {
     }
 
     parse_str($_POST['form_data'], $form_data);
+error_log(print_r($form_data, true));
 
     // Basic email validation
     if (empty($form_data['doctor_email']) || !is_email($form_data['doctor_email'])) {
@@ -327,9 +366,17 @@ function handle_send_checkout_to_doctor() {
     $order->set_address($billing_data, 'billing');
 
     // Optionally: Set shipping address (if needed)
-    if (!isset($form_data['ship_to_different_address']) || $form_data['ship_to_different_address'] !== '1') {
-        $order->set_address($billing_data, 'shipping'); // use billing as shipping
-    }
+    // if (!isset($form_data['ship_to_different_address']) || $form_data['ship_to_different_address'] !== '1') {
+    //     $order->set_address($billing_data, 'shipping'); 
+    // }
+// Save prescriber details
+if (!empty($form_data['prescriber_number'])) {
+    $order->update_meta_data('_prescriber_number', sanitize_text_field($form_data['prescriber_number']));
+}
+
+if (!empty($form_data['prescriber_name'])) {
+    $order->update_meta_data('_prescriber_name', sanitize_text_field($form_data['prescriber_name']));
+}
 
     // ✅ Set payment method
     if (!empty($form_data['payment_method'])) {
@@ -518,6 +565,9 @@ function handle_doctor_approval_page() {
         $tax = $order->get_total_tax();
         $shipping_total = $order->get_shipping_total();
         $payment_method = $order->get_payment_method_title();
+
+        $prescriber_name = $order->get_meta('_prescriber_name');
+        $prescriber_number = $order->get_meta('_prescriber_number');
         ?>
         <style>
             .doctor-approval-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
@@ -606,6 +656,8 @@ function handle_doctor_approval_page() {
                     <table class="doctor-approval-table">
                         <tr><th>Full Name</th><td><?php echo esc_html($billing['first_name'] . ' ' . $billing['last_name']); ?></td></tr>
                         <tr><th>Email</th><td><?php echo esc_html($billing['email']); ?></td></tr>
+                        <tr><th>Prescriber Name</th><td><?php echo esc_html($prescriber_name); ?></td></tr>
+                        <tr><th>Prescriber Number</th><td><?php echo esc_html($prescriber_number); ?></td></tr>
                         <tr><th>Phone</th><td><?php echo esc_html($billing['phone']); ?></td></tr>
                         <tr><th>Address</th><td><?php echo esc_html($billing['address_1'] . ' ' . $billing['address_2']); ?></td></tr>
                         <tr><th>City</th><td><?php echo esc_html($billing['city']); ?></td></tr>
@@ -631,7 +683,9 @@ function handle_doctor_approval_page() {
                 <div class="col-md-4">
                     <h3>Order Summary</h3>
                     <table class="doctor-approval-table">
+                        <?php if($payment_method){ ?>
                         <tr><th>Payment Method</th><td><?php echo esc_html($payment_method); ?></td></tr>
+                        <?php } ?>
                         <tr><th>Subtotal</th><td><?php echo wc_price($subtotal); ?></td></tr>
                         <tr><th>Shipping</th><td><?php echo wc_price($shipping_total); ?></td></tr>
                         <tr><th>Tax</th><td><?php echo wc_price($tax); ?></td></tr>
@@ -673,28 +727,28 @@ function handle_doctor_approval_page() {
 }
 
 
-add_action('init', function() {
-    register_post_status('wc-rejected-by-doctor', [
-        'label'                     => 'Rejected By Doctor',
-        'public'                    => true,
-        'exclude_from_search'       => false,
-        'show_in_admin_all_list'    => true,
-        'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Rejected By Doctor <span class="count">(%s)</span>', 'Rejected By Doctor <span class="count">(%s)</span>'),
-        'post_type'                 => ['shop_order']
-    ]);
-});
+// add_action('init', function() {
+//     register_post_status('wc-rejected-by-doctor', [
+//         'label'                     => 'Rejected By Doctor',
+//         'public'                    => true,
+//         'exclude_from_search'       => false,
+//         'show_in_admin_all_list'    => true,
+//         'show_in_admin_status_list' => true,
+//         'label_count'               => _n_noop('Rejected By Doctor <span class="count">(%s)</span>', 'Rejected By Doctor <span class="count">(%s)</span>'),
+//         'post_type'                 => ['shop_order']
+//     ]);
+// });
 
-add_filter('wc_order_statuses', function($order_statuses) {
-    $new_statuses = [];
+// add_filter('wc_order_statuses', function($order_statuses) {
+//     $new_statuses = [];
 
-    foreach ($order_statuses as $key => $label) {
-        $new_statuses[$key] = $label;
+//     foreach ($order_statuses as $key => $label) {
+//         $new_statuses[$key] = $label;
 
-        if ('wc-cancelled' === $key) {
-            $new_statuses['wc-rejected-by-doctor'] = _x('Rejected By Doctor', 'Order status', 'woocommerce');
-        }
-    }
+//         if ('wc-cancelled' === $key) {
+//             $new_statuses['wc-rejected-by-doctor'] = _x('Rejected By Doctor', 'Order status', 'woocommerce');
+//         }
+//     }
 
-    return $new_statuses;
-});
+//     return $new_statuses;
+// });
