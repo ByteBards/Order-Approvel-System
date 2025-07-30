@@ -1,4 +1,6 @@
 <?php
+
+
 // Register status with proper count styling
 // 1. Register the status (use this version)
 add_action('init', function() {
@@ -119,7 +121,7 @@ function enqueue_combined_doctor_checkout_script() {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        button#send-to-doctor,  button#confirm-ok {
+        button#send-to-doctor, button#confirm-ok {
             width: 100%;
             background-color: #0C2A42 !important;
             color: #fff !important;
@@ -137,11 +139,24 @@ function enqueue_combined_doctor_checkout_script() {
             align-items: center;
             justify-content: center;
         }
+        .doctor-email-error, .inline-error-msg, .woocommerce-error-term {
+            color: #b81c23;
+            font-size: .75em;
+            display: block;
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        p:has(.inline-error-msg) + .form-row
+        {
+            height: 105px;
+        }
     </style>
+
     <div id="global-loader"><div class="global-loader"><div class="spinner"></div></div></div>
+
     <script type="text/javascript">
     jQuery(function($) {
-        // Add modal if not already present
+
         if ($('#send-doctor-modal').length === 0) {
             $('body').append(`
                 <div id="send-doctor-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
@@ -153,17 +168,11 @@ function enqueue_combined_doctor_checkout_script() {
             `);
         }
 
-        function showLoader() {
-            $('#global-loader').fadeIn();
-        }
-
-        function hideLoader() {
-            $('#global-loader').fadeOut();
-        }
+        function showLoader() { $('#global-loader').fadeIn(); }
+        function hideLoader() { $('#global-loader').fadeOut(); }
 
         function toggleDoctorButton() {
             let isChecked = $('input[name="need_doctor_approval"]').is(':checked');
-
             if (isChecked) {
                 $('#place_order').hide();
                 if ($('#send-to-doctor').length === 0) {
@@ -175,96 +184,117 @@ function enqueue_combined_doctor_checkout_script() {
             }
         }
 
-        function validateDoctorEmail() {
-            const isChecked = $('input[name="need_doctor_approval"]').is(':checked');
-            const doctorEmail = $('input[name="doctor_email"]').val();
-            const customerEmail = $('input[name="billing_email"]').val();
-            
-            if (isChecked) {
-                if (!doctorEmail) {
-                    return 'Doctor email is required';
-                } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(doctorEmail)) {
-                    return 'Please enter a valid doctor email address';
-                } else if (doctorEmail === customerEmail) {
-                    return 'Doctor email cannot be the same as customer email';
-                }
-            }
-            return '';
+        function resetAllErrors() {
+            $('.woocommerce-error, .woocommerce-message, .checkout-inline-error-message, .woocommerce-NoticeGroup-checkout').remove();
+            $('.doctor-email-error, .inline-error-msg, .woocommerce-error-term').remove();
+            $('form.checkout .woocommerce-invalid').removeClass('woocommerce-invalid woocommerce-invalid-required-field');
         }
 
-        // Trigger on checkbox change with loader delay
+        function validateDoctorEmail() {
+            const isChecked = $('input[name="need_doctor_approval"]').is(':checked');
+            const doctorEmail = $('input[name="doctor_email"]');
+            const customerEmail = $('input[name="billing_email"]').val();
+            const emailVal = doctorEmail.val();
+            let message = '';
+
+            $('.doctor-email-error').remove();
+            doctorEmail.removeClass('woocommerce-invalid');
+
+            if (isChecked) {
+                if (!emailVal) {
+                    // message = 'Doctor email is required.';
+                } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+                    message = 'Please enter a valid doctor email address.';
+                } else if (emailVal === customerEmail) {
+                    message = 'Doctor email cannot be the same as customer email.';
+                }
+
+                // if (message) {
+                //     doctorEmail.addClass('woocommerce-invalid woocommerce-invalid-required-field')
+                //         .after('<span class="doctor-email-error">' + message + '</span>');
+                // }
+            }
+
+            return message;
+        }
+
         $('input[name="need_doctor_approval"]').on('change', function () {
             showLoader();
-
             setTimeout(() => {
                 $('#doctor-email-wrapper').toggle($(this).is(':checked'));
                 $('#signature-content').toggle(!$(this).is(':checked'));
                 toggleDoctorButton();
+
+                // ✅ Clear all validation errors when toggling approval checkbox
+                resetAllErrors();
+
                 hideLoader();
-            }, 1000);
+            }, 500);
         }).trigger('change');
 
         toggleDoctorButton();
 
-        // Send to doctor button click
         $(document).on('click', '#send-to-doctor', function(e) {
             e.preventDefault();
             showLoader();
 
-            $('.woocommerce-error, .woocommerce-message').remove();
+            resetAllErrors();
 
-            // Validate doctor email first
-            const emailError = validateDoctorEmail();
-            if (emailError) {
-                hideLoader();
-                $('.woocommerce-notices-wrapper').first().append(`
-                    <ul class="woocommerce-error" role="alert">
-                        <li>${emailError}</li>
-                    </ul>
-                `);
-                $('html, body').animate({
-                    scrollTop: $(".woocommerce-notices-wrapper").first().offset().top - 100
-                }, 500);
-                return;
+            let errors = [];
+
+            const paymentMethods = $('input[name="payment_method"]');
+            if (paymentMethods.length > 0 && !$('input[name="payment_method"]:checked').val()) {
+                errors.push('<li><strong>Error:</strong> Please select a payment method before proceeding.</li>');
             }
 
-            const selectedPaymentMethod = $('input[name="payment_method"]:checked').val();
-            const $selectedPaymentBox = $('.payment_box.payment_method_' + selectedPaymentMethod);
-            $('form.checkout .woocommerce-invalid').removeClass('woocommerce-invalid woocommerce-invalid-required-field');
+            const doctorEmailError = validateDoctorEmail();
+            if (doctorEmailError) {
+                errors.push('<li><strong>Error:</strong> ' + doctorEmailError + '</li>');
+            }
 
-            $selectedPaymentBox.find('input, select, textarea').each(function () {
-                if ($(this).is(':visible')) {
-                    $(this).trigger('validate').blur();
-                }
-            });
-
-            $('form.checkout').find('input, select, textarea').not('.payment_box *').each(function () {
+            $('form.checkout').find('input, select, textarea').each(function () {
                 if ($(this).is(':visible')) {
                     $(this).trigger('validate').blur();
                 }
             });
 
             setTimeout(function () {
-                const hasInvalidFields = $('.woocommerce-invalid').length > 0;
+                $('form.checkout').find('.woocommerce-invalid').each(function () {
+                    const $input = $(this);
+                    const $formRow = $input.closest('.form-row');
+                    const fieldId = $input.attr('id');
+                    let label = $formRow.find('label').first().text().trim().replace('*', '').trim();
 
-                if (hasInvalidFields) {
-                    $('html, body').animate({
-                        scrollTop: $(".woocommerce-notices-wrapper").first().offset().top - 100
-                    }, 500);
-
-                    if ($('.woocommerce-error').length === 0) {
-                        $('.woocommerce-notices-wrapper').first().append(`
-                            <ul class="woocommerce-error" role="alert">
-                                <li>Please correct the highlighted fields before proceeding.</li>
-                            </ul>
-                        `);
+                    if (!label && fieldId) {
+                        label = fieldId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                     }
 
+                    if (fieldId && label) {
+                        errors.push(`<li data-id="${fieldId}"><a href="#${fieldId}"><strong>${label}</strong> is a required field.</a></li>`);
+                        $formRow.find('.inline-error-msg').remove();
+                        $formRow.append(`<p class="inline-error-msg">${label} is a required field.</p>`);
+                    }
+                });
+
+                const $terms = $('#terms');
+                $terms.closest('.form-row').find('.woocommerce-error-term').remove();
+                if ($terms.length && !$terms.prop('checked')) {
+                    errors.push('<li><strong>Error:</strong> You must accept the terms and conditions.</li>');
+                    $terms.closest('.form-row').append('<p class="woocommerce-error-term">Please read and accept the terms and conditions to proceed with your order.</p>');
+                }
+
+                if (errors.length > 0) {
+                    const errorHtml = `<div class="woocommerce-NoticeGroup woocommerce-NoticeGroup-checkout" role="alert">
+                        <ul class="woocommerce-error" tabindex="-1">${errors.join('')}</ul>
+                    </div>`;
+
+                    $('.woocommerce-notices-wrapper').first().append(errorHtml);
+                    $('html, body').animate({ scrollTop: $(".woocommerce-notices-wrapper").first().offset().top - 100 }, 500);
                     hideLoader();
                     return;
                 }
 
-                var formData = $('form.checkout').serialize();
+                const formData = $('form.checkout').serialize();
 
                 $.ajax({
                     type: 'POST',
@@ -275,14 +305,11 @@ function enqueue_combined_doctor_checkout_script() {
                     },
                     success: function (response) {
                         hideLoader();
-
                         if (response.success) {
                             $('#send-doctor-modal').fadeIn();
-
                             let autoRedirect = setTimeout(() => {
                                 window.location.href = '<?php echo esc_url(home_url()); ?>?clear_cart=1';
                             }, 10000);
-
                             $('#confirm-ok').on('click', function () {
                                 clearTimeout(autoRedirect);
                                 window.location.href = '<?php echo esc_url(home_url()); ?>?clear_cart=1';
@@ -311,6 +338,13 @@ function enqueue_combined_doctor_checkout_script() {
     <?php
 }
 add_action('wp_footer', 'enqueue_combined_doctor_checkout_script');
+
+
+
+
+
+
+
 
 
 // Register AJAX handler for logged-in and guest users
@@ -752,3 +786,46 @@ function handle_doctor_approval_page() {
 
 //     return $new_statuses;
 // });
+
+// Add inline JavaScript
+function add_email_verification_script() {
+    if (is_wc_endpoint_url('order-received')) {
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('.woocommerce-verify-email').on('submit', function(e) {
+                var email = $('#email').val().trim();
+                
+                if (!email) {
+                    e.preventDefault();
+                    
+                    // Remove existing errors
+                    $('.woocommerce-error').remove();
+                    
+                    // Add new error
+                    $(this).prepend(
+                        '<ul class="woocommerce-error" role="alert">' +
+                        '<li>Please enter an email address to verify.</li>' +
+                        '</ul>'
+                    );
+                    
+                    $('#email').focus();
+                }
+            });
+        });
+        </script>
+        <?php
+    }
+}
+add_action('wp_footer', 'add_email_verification_script');
+// Add this to your theme's functions.php file
+add_action('template_redirect', function() {
+    if (is_wc_endpoint_url('order-received') && 
+        $_SERVER['REQUEST_METHOD'] === 'POST' && 
+        isset($_POST['verify'])) {
+        
+        if (empty($_POST['email'])) {
+            wc_add_notice('Please enter an email address to verify.', 'error');
+        }
+    }
+});
