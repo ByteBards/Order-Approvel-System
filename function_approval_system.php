@@ -5,13 +5,13 @@
 // 1. Register the status (use this version)
 add_action('init', function() {
     register_post_status('wc-waiting-signature', [
-        'label'                     => 'Waiting for Signature',
+        'label'                     => "Pending Doctor's approval",
         'public'                    => true,
         'exclude_from_search'       => false,
         'show_in_admin_all_list'    => true,
         'show_in_admin_status_list' => true,
-        'label_count'               => _n_noop('Waiting for Signature <span class="count">(%s)</span>', 'Waiting for Signature <span class="count">(%s)</span>'),
-        'post_type'                 => ['shop_order'] // Explicitly for orders
+        'label_count'               => _n_noop("Pending Doctor's approval <span class=\"count\">(%s)</span>", "Pending Doctor's approval <span class=\"count\">(%s)</span>"),
+        'post_type'                 => ['shop_order'], // Explicitly for orders
     ]);
 });
 
@@ -21,11 +21,12 @@ add_filter('wc_order_statuses', function($order_statuses) {
     foreach ($order_statuses as $key => $label) {
         $new_statuses[$key] = $label;
         if ('wc-pending' === $key) {
-            $new_statuses['wc-waiting-signature'] = _x('Waiting for Signature', 'Order status', 'woocommerce');
+            $new_statuses['wc-waiting-signature'] = _x("Pending Doctor's approval", 'Order status', 'woocommerce');
         }
     }
     return $new_statuses;
 });
+
 
 
 
@@ -421,7 +422,7 @@ if (!empty($form_data['prescriber_name'])) {
             $order->set_payment_method_title($gateways[$form_data['payment_method']]->get_title());
         }
     }
-
+    $order->set_customer_id(get_current_user_id());
     // Save doctor approval metadata
     $order->update_meta_data('need_doctor_approval', 'yes');
     $order->update_meta_data('doctor_email', sanitize_email($form_data['doctor_email']));
@@ -516,7 +517,9 @@ function handle_doctor_approval_page() {
             }
 
             wc_add_notice('Order approved successfully.', 'success');
-            wp_redirect(add_query_arg('key', $order->get_order_key(), wc_get_endpoint_url('order-received', $order->get_id(), wc_get_checkout_url())));
+            // wp_redirect(add_query_arg('key', $order->get_order_key(), wc_get_endpoint_url('order-received', $order->get_id(), wc_get_checkout_url())));
+            $order_key = $order->get_order_key();
+            wp_redirect(home_url("/thank-you/?order_id={$order_id}&key={$order_key}"));
             exit;
         }
     }
@@ -759,6 +762,46 @@ function handle_doctor_approval_page() {
         return $content . ob_get_clean();
     }, 20);
 }
+function doctor_order_thankyou_shortcode() {
+    if (!isset($_GET['order_id'])) return '<p>Missing order.</p>';
+
+    $order_id = absint($_GET['order_id']);
+    $order_key = sanitize_text_field($_GET['key'] ?? '');
+
+    $order = wc_get_order($order_id);
+    if (!$order) return '<p>Order not found.</p>';
+
+    if ($order->get_order_key() !== $order_key) {
+        return '<p>Invalid order key.</p>';
+    }
+
+    // Fake login context (temporarily) to display full order data
+    $customer_id = $order->get_customer_id();
+    $original_user_id = get_current_user_id();
+
+    if ($customer_id > 0 && $customer_id !== $original_user_id) {
+        wp_set_current_user($customer_id);
+    }
+
+    ob_start();
+
+    wc_get_template(
+        'checkout/thankyou.php',
+        array(
+            'order_id' => $order_id,
+            'order' => $order
+        )
+    );
+
+    // Restore original user
+    if ($customer_id > 0 && $customer_id !== $original_user_id) {
+        wp_set_current_user($original_user_id);
+    }
+
+    return ob_get_clean();
+}
+add_shortcode('doctor_order_thankyou', 'doctor_order_thankyou_shortcode');
+
 
 
 // add_action('init', function() {
@@ -829,3 +872,34 @@ add_action('template_redirect', function() {
         }
     }
 });
+
+
+// Step 1: Add "Status" column to My Account orders table
+add_filter('woocommerce_my_account_my_orders_columns', 'custom_add_status_column');
+function custom_add_status_column($columns) {
+    // Insert the "Status" column before the "Actions" column
+    $new_columns = [];
+
+    foreach ($columns as $key => $label) {
+        if ($key === 'order-total') {
+            $new_columns['order-status'] = __('Status', 'woocommerce');
+        }
+
+        $new_columns[$key] = $label;
+    }
+
+    return $new_columns;
+}
+
+// Step 2: Display the status inside the new column
+add_action('woocommerce_my_account_my_orders_column_order-status', 'custom_show_order_status_column');
+function custom_show_order_status_column($order) {
+    if (!$order instanceof WC_Order) {
+        $order = wc_get_order($order);
+    }
+
+    $status = $order->get_status(); // e.g., 'completed'
+    $status_label = wc_get_order_status_name($status); // e.g., 'Completed'
+    
+    echo '<span class="order-status-label order-status-' . esc_attr($status) . '">' . esc_html($status_label) . '</span>';
+}
